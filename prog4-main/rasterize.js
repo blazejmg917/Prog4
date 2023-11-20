@@ -27,6 +27,7 @@ var triangleBuffers = []; // lists of indices into vertexBuffers by set, in trip
 var textures = [];
 var viewDelta = 0; // how much to displace view with each key press
 var transparent = [];
+//var alphas = [];
 
 /* shader parameter locations */
 var vPosAttribLoc; // where to put position for vertex shader
@@ -40,6 +41,7 @@ var textureULoc;
 var vNormAttribLoc;
 var vuvAttribLoc;
 var uLightTypeAttribLoc;
+var uAlphaAttribLoc;
 var useCombineLighting = true; // if set to true, use combine lighting style for textures, else use replace
 
 /* interaction variables */
@@ -352,7 +354,7 @@ function setupWebGL() {
       if (gl == null) {
         throw "unable to create gl context -- is your browser gl ready?";
       } else {
-        //gl.clearColor(0.0, 0.0, 0.0, 1.0); // use black when we clear the frame buffer
+        gl.clearColor(0.0, 0.0, 0.0, 0.0); // use black when we clear the frame buffer
         gl.clearDepth(1.0); // use max when we clear the depth buffer
         gl.enable(gl.DEPTH_TEST); // use hidden surface removal (with zbuffering)
       }
@@ -502,7 +504,7 @@ function loadModels() {
                     vec3.add(inputTriangles[whichSet].center,inputTriangles[whichSet].center,vtxToAdd); // add to ctr sum
                 } // end for vertices in set
                 vec3.scale(inputTriangles[whichSet].center,inputTriangles[whichSet].center,1/numVerts); // avg ctr sum
-                if(inputTriangles[whichSet.material.alpha >= 1.0]){
+                if(inputTriangles[whichSet].material.alpha >= 1.0){
                     transparent.push(false);
                 }
                 else{
@@ -536,6 +538,7 @@ function loadModels() {
 
                 //textures.push(inputTriangles[whichSet].material.texture);
                 textures.push(getTexture(inputTriangles[whichSet].material.texture));
+                //alphas.push(getTexture(inputTriangles[whichSet].material.alpha));
                 console.log("adding texture " + inputTriangles[whichSet].material.texture + ", :" + textures.toString());
 
             } // end for each triangle set 
@@ -642,6 +645,7 @@ function setupShaders() {
         uniform vec3 uDiffuse; // the diffuse reflectivity
         uniform vec3 uSpecular; // the specular reflectivity
         uniform float uShininess; // the specular exponent
+        uniform float uAlpha; // the opacity
         
         // geometry properties
         varying vec3 vWorldPos; // world xyz of fragment
@@ -672,9 +676,10 @@ function setupShaders() {
             vec3 colorOut = ambient + diffuse + specular; // no specular yet
 
             vec4 textureColor = texture2D(uTexture, vuv);
-            //gl_FragColor = vec4(vuv, 0.0,1.0);
+            // gl_FragColor = vec4(uAlpha, 0.0,0.0, 1.0);
+            // return;
             if(uCombineLighting){
-                gl_FragColor = vec4(textureColor.rgb * colorOut, textureColor.a); 
+                gl_FragColor = vec4(textureColor.rgb * colorOut, textureColor.a * uAlpha); 
             }
             else{
                 gl_FragColor = textureColor;
@@ -722,6 +727,7 @@ function setupShaders() {
                 pvmMatrixULoc = gl.getUniformLocation(shaderProgram, "upvmMatrix"); // ptr to pvmmat
                 textureULoc = gl.getUniformLocation(shaderProgram, "uTexture");
                 uLightTypeAttribLoc = gl.getUniformLocation(shaderProgram, "uCombineLighting");
+                uAlphaAttribLoc = gl.getUniformLocation(shaderProgram, "uAlpha");
 
                 // locate fragment uniforms
                 var eyePositionULoc = gl.getUniformLocation(shaderProgram, "uEyePosition"); // ptr to eye position
@@ -807,13 +813,14 @@ function renderModels() {
     }
 
     //opaque objects
-    //gl.depthMask(true)
+    gl.depthMask(true)
+    gl.disable(gl.BLEND);
     // render each triangle set
     var currSet; // the tri set and its material properties
     for (var whichTriSet=0; whichTriSet<numTriangleSets; whichTriSet++) {
-        // if(transparent[whichTriSet]){
-        //     continue;
-        // }
+        if(transparent[whichTriSet]){
+            continue;
+        }
         currSet = inputTriangles[whichTriSet];
         
         // make model transform, add to view project
@@ -827,6 +834,7 @@ function renderModels() {
         gl.uniform3fv(diffuseULoc,currSet.material.diffuse); // pass in the diffuse reflectivity
         gl.uniform3fv(specularULoc,currSet.material.specular); // pass in the specular reflectivity
         gl.uniform1f(shininessULoc,currSet.material.n); // pass in the specular exponent
+        gl.uniform1f(uAlphaAttribLoc,currSet.material.alpha); // pass in the specular exponent
         
         // vertex buffer: activate and feed into vertex shader
         gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffers[whichTriSet]); // activate
@@ -856,10 +864,12 @@ function renderModels() {
     } // end for each triangle set
     
 
-    return;
+    //return;
 
     //transparent objects
-    gl.depthMask(false)
+    gl.depthMask(false);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     // render each triangle set
     var currSet; // the tri set and its material properties
     for (var whichTriSet=0; whichTriSet<numTriangleSets; whichTriSet++) {
@@ -878,7 +888,7 @@ function renderModels() {
         gl.uniform3fv(diffuseULoc,currSet.material.diffuse); // pass in the diffuse reflectivity
         gl.uniform3fv(specularULoc,currSet.material.specular); // pass in the specular reflectivity
         gl.uniform1f(shininessULoc,currSet.material.n); // pass in the specular exponent
-        
+        gl.uniform1f(uAlphaAttribLoc,currSet.material.alpha); // pass in the specular exponent
         // vertex buffer: activate and feed into vertex shader
         gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffers[whichTriSet]); // activate
         gl.vertexAttribPointer(vPosAttribLoc,3,gl.FLOAT,false,0,0); // feed
