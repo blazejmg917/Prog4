@@ -26,6 +26,7 @@ var triSetSizes = []; // this contains the size of each triangle set
 var triangleBuffers = []; // lists of indices into vertexBuffers by set, in triples
 var textures = [];
 var viewDelta = 0; // how much to displace view with each key press
+var transparent = [];
 
 /* shader parameter locations */
 var vPosAttribLoc; // where to put position for vertex shader
@@ -501,6 +502,12 @@ function loadModels() {
                     vec3.add(inputTriangles[whichSet].center,inputTriangles[whichSet].center,vtxToAdd); // add to ctr sum
                 } // end for vertices in set
                 vec3.scale(inputTriangles[whichSet].center,inputTriangles[whichSet].center,1/numVerts); // avg ctr sum
+                if(inputTriangles[whichSet.material.alpha >= 1.0]){
+                    transparent.push(false);
+                }
+                else{
+                    transparent.push(true);
+                }
 
                 // send the vertex coords and normals to webGL
                 vertexBuffers[whichSet] = gl.createBuffer(); // init empty webgl set vertex coord buffer
@@ -799,9 +806,14 @@ function renderModels() {
         gl.uniform1i(uLightTypeAttribLoc, false);
     }
 
+    //opaque objects
+    //gl.depthMask(true)
     // render each triangle set
     var currSet; // the tri set and its material properties
     for (var whichTriSet=0; whichTriSet<numTriangleSets; whichTriSet++) {
+        // if(transparent[whichTriSet]){
+        //     continue;
+        // }
         currSet = inputTriangles[whichTriSet];
         
         // make model transform, add to view project
@@ -843,6 +855,56 @@ function renderModels() {
         
     } // end for each triangle set
     
+
+    return;
+
+    //transparent objects
+    gl.depthMask(false)
+    // render each triangle set
+    var currSet; // the tri set and its material properties
+    for (var whichTriSet=0; whichTriSet<numTriangleSets; whichTriSet++) {
+        currSet = inputTriangles[whichTriSet];
+        if(!transparent[whichTriSet]){
+            continue;
+        }
+        // make model transform, add to view project
+        makeModelTransform(currSet);
+        mat4.multiply(pvmMatrix,pvMatrix,mMatrix); // project * view * model
+        gl.uniformMatrix4fv(mMatrixULoc, false, mMatrix); // pass in the m matrix
+        gl.uniformMatrix4fv(pvmMatrixULoc, false, pvmMatrix); // pass in the hpvm matrix
+        
+        // reflectivity: feed to the fragment shader
+        gl.uniform3fv(ambientULoc,currSet.material.ambient); // pass in the ambient reflectivity
+        gl.uniform3fv(diffuseULoc,currSet.material.diffuse); // pass in the diffuse reflectivity
+        gl.uniform3fv(specularULoc,currSet.material.specular); // pass in the specular reflectivity
+        gl.uniform1f(shininessULoc,currSet.material.n); // pass in the specular exponent
+        
+        // vertex buffer: activate and feed into vertex shader
+        gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffers[whichTriSet]); // activate
+        gl.vertexAttribPointer(vPosAttribLoc,3,gl.FLOAT,false,0,0); // feed
+        gl.bindBuffer(gl.ARRAY_BUFFER,normalBuffers[whichTriSet]); // activate
+        gl.vertexAttribPointer(vNormAttribLoc,3,gl.FLOAT,false,0,0); // feed
+        gl.bindBuffer(gl.ARRAY_BUFFER,uvBuffers[whichTriSet]); // activate
+        gl.vertexAttribPointer(vuvAttribLoc,3,gl.FLOAT,false,0,0); // feed
+
+
+
+        //texture
+        gl.activeTexture(gl.TEXTURE0);
+
+        gl.bindTexture(gl.TEXTURE_2D, textures[whichTriSet]);
+        //gl.bindTexture(gl.TEXTURE_2D, getTexture(textures[whichTriSet]));
+        //console.log("loading texture: " + textures[whichTriSet]);
+
+        gl.uniform1i(textureULoc, 0);
+
+        
+
+        // triangle buffer: activate and render
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers[whichTriSet]); // activate
+        gl.drawElements(gl.TRIANGLES,3*triSetSizes[whichTriSet],gl.UNSIGNED_SHORT,0); // render
+        
+    } // end for each triangle set
 
 
     //SKIP ELLIPSOIDS----------------------------------------------------------------------------------------------------------------------------------------------------
